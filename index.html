@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Calc AI</title>
+  <style>
+    body { font-family: sans-serif; background: #111; color: #eee; margin: 16px; }
+    button, input, textarea { font-size: 16px; width: 100%; box-sizing: border-box; margin: 6px 0; padding: 10px; border-radius: 8px; border: 0; }
+    button { background: #3b82f6; color: #fff; font-weight: 700; }
+    button.secondary { background: #333; }
+    input, textarea { background: #222; color: #eee; }
+    .log { white-space: pre-wrap; background: #1a1a1a; padding: 10px; border-radius: 8px; min-height: 140px; font-size: 14px; }
+    .ok { color: #4ade80; }
+    .err { color: #f87171; }
+  </style>
+</head>
+<body>
+  <h2>Calc AI</h2>
+  <p>Открой эту страницу в Chrome на Android.</p>
+  <input id="apiKey" type="password" placeholder="API ключ Groq / OpenRouter / OpenAI" />
+  <input id="apiUrl" value="https://api.groq.com/openai/v1/chat/completions" />
+  <input id="model" value="llama-3.1-8b-instant" />
+  <textarea id="system">Отвечай кратко по-русски, не больше 200 символов. Без воды.</textarea>
+  <button id="connectBtn">Подключить калькулятор</button>
+  <button id="saveBtn" class="secondary">Сохранить настройки</button>
+  <div id="status">Не подключено</div>
+  <div id="log" class="log"></div>
+<script>
+const SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+const RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+const TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+let rxChar = null;
+let history = [];
+const logEl = document.getElementById("log");
+const statusEl = document.getElementById("status");
+function log(text, cls = "") {
+  const line = document.createElement("div");
+  line.className = cls;
+  line.textContent = text;
+  logEl.prepend(line);
+}
+["apiKey", "apiUrl", "model", "system"].forEach((id) => {
+  const saved = localStorage.getItem(id);
+  if (saved) document.getElementById(id).value = saved;
+});
+document.getElementById("saveBtn").onclick = () => {
+  ["apiKey", "apiUrl", "model", "system"].forEach((id) => {
+    localStorage.setItem(id, document.getElementById(id).value.trim());
+  });
+  history = [{ role: "system", content: document.getElementById("system").value.trim() }];
+  log("Настройки сохранены", "ok");
+};
+history = [{ role: "system", content: document.getElementById("system").value.trim() }];
+async function askAI(question) {
+  const apiKey = document.getElementById("apiKey").value.trim();
+  const apiUrl = document.getElementById("apiUrl").value.trim();
+  const model = document.getElementById("model").value.trim();
+  if (!apiKey) throw new Error("Нет API ключа");
+  history.push({ role: "user", content: question });
+  const res = await fetch(apiUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + apiKey
+    },
+    body: JSON.stringify({ model, messages: history, max_tokens: 120 })
+  });
+  if (!res.ok) throw new Error("API " + res.status + " " + await res.text());
+  const data = await res.json();
+  let ans = (data.choices?.[0]?.message?.content || "").trim();
+  if (ans.length > 200) ans = ans.slice(0, 200);
+  history.push({ role: "assistant", content: ans });
+  if (history.length > 16) history = [history[0], ...history.slice(-14)];
+  return ans;
+}
+document.getElementById("connectBtn").onclick = async () => {
+  try {
+    statusEl.textContent = "Ищу устройство...";
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ name: "Calc-ESP32" }],
+      optionalServices: [SERVICE]
+    });
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE);
+    rxChar = await service.getCharacteristic(RX);
+    const txChar = await service.getCharacteristic(TX);
+    await txChar.startNotifications();
+    txChar.addEventListener("characteristicvaluechanged", async (event) => {
+      const q = new TextDecoder().decode(event.target.value).trim();
+      if (!q) return;
+      log("Вопрос: " + q);
+      statusEl.textContent = "Думаю...";
+      try {
+        const ans = await askAI(q);
+        log("Ответ: " + ans, "ok");
+        await rxChar.writeValueWithoutResponse(new TextEncoder().encode(ans));
+        statusEl.textContent = "Подключено";
+      } catch (e) {
+        log(String(e), "err");
+        statusEl.textContent = "Ошибка ИИ";
+      }
+    });
+    device.addEventListener("gattserverdisconnected", () => {
+      statusEl.textContent = "Отключено";
+      rxChar = null;
+    });
+    statusEl.textContent = "Подключено";
+    log("BLE ок", "ok");
+  } catch (e) {
+    statusEl.textContent = "Не подключено";
+    log(String(e), "err");
+  }
+};
+</script>
+</body>
+</html>
