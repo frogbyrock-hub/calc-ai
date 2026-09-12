@@ -20,8 +20,8 @@
   <p>Открой эту страницу в Chrome на Android.</p>
   <input id="apiKey" type="password" placeholder="API ключ Groq" />
   <input id="apiUrl" value="https://api.groq.com/openai/v1/chat/completions" />
-  <input id="model" value="openai/gpt-oss-20b" />
-  <textarea id="system">Отвечай кратко по-русски, не больше 200 символов. Если не уверен — напиши не знаю. Не выдумывай.</textarea>
+  <input id="model" value="llama-3.3-70b-versatile" />
+  <textarea id="system">Answer in English, max 120 characters. If unsure say I do not know.</textarea>
   <button id="connectBtn">Подключить калькулятор</button>
   <button id="saveBtn" class="secondary">Сохранить настройки</button>
   <div id="status">Не подключено</div>
@@ -40,6 +40,15 @@ function log(text, cls = "") {
   line.textContent = text;
   logEl.prepend(line);
 }
+function pickText(data) {
+  const msg = data.choices?.[0]?.message || {};
+  let ans = msg.content;
+  if (Array.isArray(ans)) {
+    ans = ans.map(p => (typeof p === "string" ? p : (p.text || p.content || ""))).join(" ");
+  }
+  ans = (ans || msg.reasoning || data.choices?.[0]?.text || "").toString().trim();
+  return ans;
+}
 ["apiKey", "apiUrl", "model", "system"].forEach((id) => {
   const saved = localStorage.getItem(id);
   if (saved) document.getElementById(id).value = saved;
@@ -55,7 +64,8 @@ history = [{ role: "system", content: document.getElementById("system").value.tr
 async function askAI(question) {
   const apiKey = document.getElementById("apiKey").value.trim();
   const apiUrl = document.getElementById("apiUrl").value.trim();
-  const model = document.getElementById("model").value.trim();
+  const model = document.getElementById("model").value.trim().replace(/\s+/g, "");
+  document.getElementById("model").value = model;
   if (!apiKey) throw new Error("Нет API ключа");
   history.push({ role: "user", content: question });
   const res = await fetch(apiUrl, {
@@ -64,11 +74,16 @@ async function askAI(question) {
       "Content-Type": "application/json",
       "Authorization": "Bearer " + apiKey
     },
-    body: JSON.stringify({ model, messages: history, max_tokens: 120 })
+    body: JSON.stringify({ model, messages: history, max_tokens: 256 })
   });
-  if (!res.ok) throw new Error("API " + res.status + " " + await res.text());
-  const data = await res.json();
-  let ans = (data.choices?.[0]?.message?.content || "").trim();
+  const raw = await res.text();
+  if (!res.ok) throw new Error("API " + res.status + " " + raw);
+  const data = JSON.parse(raw);
+  let ans = pickText(data);
+  if (!ans) {
+    log(raw.slice(0, 400), "err");
+    ans = "empty";
+  }
   if (ans.length > 200) ans = ans.slice(0, 200);
   history.push({ role: "assistant", content: ans });
   if (history.length > 16) history = [history[0], ...history.slice(-14)];
