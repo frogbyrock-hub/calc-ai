@@ -20,7 +20,7 @@
   <input id="apiKey" type="password" placeholder="API ключ Groq" />
   <input id="apiUrl" value="https://api.groq.com/openai/v1/chat/completions" />
   <input id="model" value="groq/compound-mini" />
-  <textarea id="system">Answer in English, max 120 characters.</textarea>
+  <textarea id="system">Отвечай кратко по-русски, до 200 символов.</textarea>
   <button id="connectBtn">Подключить калькулятор</button>
   <button id="saveBtn" class="secondary">Сохранить настройки</button>
   <div id="status">Не подключено</div>
@@ -76,8 +76,7 @@ async function askAI(question) {
   });
   const raw = await res.text();
   if (!res.ok) throw new Error("API " + res.status + " " + raw);
-  const data = JSON.parse(raw);
-  let ans = pickText(data);
+  let ans = pickText(JSON.parse(raw));
   if (!ans) ans = "empty";
   if (ans.length > 200) ans = ans.slice(0, 200);
   history.push({ role: "assistant", content: ans });
@@ -86,12 +85,10 @@ async function askAI(question) {
 }
 document.getElementById("connectBtn").onclick = async () => {
   try {
-    statusEl.textContent = "Ищу устройство...";
     const device = await navigator.bluetooth.requestDevice({
-      acceptAllDevices: true,
+      filters: [{ name: "Calc-ESP32" }],
       optionalServices: [SERVICE]
     });
-    log("Выбран: " + (device.name || device.id));
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(SERVICE);
     rxChar = await service.getCharacteristic(RX);
@@ -101,20 +98,13 @@ document.getElementById("connectBtn").onclick = async () => {
       const q = new TextDecoder().decode(event.target.value).trim();
       if (!q) return;
       log("Вопрос: " + q);
-      statusEl.textContent = "Думаю...";
       try {
         const ans = await askAI(q);
         log("Ответ: " + ans, "ok");
         await rxChar.writeValueWithoutResponse(new TextEncoder().encode(ans));
-        statusEl.textContent = "Подключено";
       } catch (e) {
         log(String(e), "err");
-        statusEl.textContent = "Ошибка ИИ";
       }
-    });
-    device.addEventListener("gattserverdisconnected", () => {
-      statusEl.textContent = "Отключено";
-      rxChar = null;
     });
     statusEl.textContent = "Подключено";
     log("BLE ок", "ok");
