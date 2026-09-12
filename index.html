@@ -18,10 +18,10 @@
 <body>
   <h2>Calc AI</h2>
   <p>Открой эту страницу в Chrome на Android.</p>
-  <input id="apiKey" type="password" placeholder="API ключ Groq / OpenRouter / OpenAI" />
+  <input id="apiKey" type="password" placeholder="API ключ Groq" />
   <input id="apiUrl" value="https://api.groq.com/openai/v1/chat/completions" />
-  <input id="model" value="llama-3.1-8b-instant" />
-  <textarea id="system">Отвечай кратко по-русски, не больше 200 символов. Без воды.</textarea>
+  <input id="model" value="openai/gpt-oss-20b" />
+  <textarea id="system">Отвечай кратко по-русски, не больше 200 символов. Если не уверен — напиши не знаю. Не выдумывай.</textarea>
   <button id="connectBtn">Подключить калькулятор</button>
   <button id="saveBtn" class="secondary">Сохранить настройки</button>
   <div id="status">Не подключено</div>
