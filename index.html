@@ -17,11 +17,10 @@
 </head>
 <body>
   <h2>Calc AI</h2>
-  <p>Открой эту страницу в Chrome на Android.</p>
   <input id="apiKey" type="password" placeholder="API ключ Groq" />
   <input id="apiUrl" value="https://api.groq.com/openai/v1/chat/completions" />
-  <input id="model" value="llama-3.3-70b-versatile" />
-  <textarea id="system">Answer in English, max 120 characters. If unsure say I do not know.</textarea>
+  <input id="model" value="groq/compound-mini" />
+  <textarea id="system">Answer in English, max 120 characters.</textarea>
   <button id="connectBtn">Подключить калькулятор</button>
   <button id="saveBtn" class="secondary">Сохранить настройки</button>
   <div id="status">Не подключено</div>
@@ -46,8 +45,7 @@ function pickText(data) {
   if (Array.isArray(ans)) {
     ans = ans.map(p => (typeof p === "string" ? p : (p.text || p.content || ""))).join(" ");
   }
-  ans = (ans || msg.reasoning || data.choices?.[0]?.text || "").toString().trim();
-  return ans;
+  return (ans || msg.reasoning || data.choices?.[0]?.text || "").toString().trim();
 }
 ["apiKey", "apiUrl", "model", "system"].forEach((id) => {
   const saved = localStorage.getItem(id);
@@ -80,10 +78,7 @@ async function askAI(question) {
   if (!res.ok) throw new Error("API " + res.status + " " + raw);
   const data = JSON.parse(raw);
   let ans = pickText(data);
-  if (!ans) {
-    log(raw.slice(0, 400), "err");
-    ans = "empty";
-  }
+  if (!ans) ans = "empty";
   if (ans.length > 200) ans = ans.slice(0, 200);
   history.push({ role: "assistant", content: ans });
   if (history.length > 16) history = [history[0], ...history.slice(-14)];
@@ -93,9 +88,10 @@ document.getElementById("connectBtn").onclick = async () => {
   try {
     statusEl.textContent = "Ищу устройство...";
     const device = await navigator.bluetooth.requestDevice({
-      filters: [{ name: "Calc-ESP32" }],
+      acceptAllDevices: true,
       optionalServices: [SERVICE]
     });
+    log("Выбран: " + (device.name || device.id));
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(SERVICE);
     rxChar = await service.getCharacteristic(RX);
