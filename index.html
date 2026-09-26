@@ -19,10 +19,12 @@
   <h2>Calc AI</h2>
   <input id="apiKey" type="password" placeholder="API ключ Groq" />
   <input id="apiUrl" value="https://api.groq.com/openai/v1/chat/completions" />
-  <input id="model" value="groq/compound-mini" />
+  <input id="model" value="llama-3.3-70b-versatile" />
   <textarea id="system">Отвечай кратко по-русски, до 200 символов. Помни предыдущий вопрос пользователя.</textarea>
   <button id="connectBtn">Подключить калькулятор</button>
   <button id="saveBtn" class="secondary">Сохранить настройки</button>
+  <input id="q" placeholder="Вопрос с телефона" />
+  <button id="sendBtn" class="secondary">Send</button>
   <div id="status">Не подключено</div>
   <div id="log" class="log"></div>
 <script>
@@ -106,33 +108,63 @@ async function askAI(question) {
   if (history.length > 8) history = history.slice(-8);
   return ans;
 }
+async function sendToEsp(text) {
+  if (!rxChar) throw new Error("нет BLE");
+  const bytes = new TextEncoder().encode(clip(text));
+  try {
+    await rxChar.writeValueWithoutResponse(bytes);
+  } catch (e) {
+    await rxChar.writeValue(bytes);
+  }
+}
 document.getElementById("connectBtn").onclick = async () => {
   try {
     const device = await navigator.bluetooth.requestDevice({
-      filters: [{ name: "Calc-ESP32" }],
+      filters: [
+        { name: "CalcAI" },
+        { name: "Calc-ESP32" },
+        { namePrefix: "Calc" }
+      ],
       optionalServices: [SERVICE]
     });
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(SERVICE);
     rxChar = await service.getCharacteristic(RX);
-    const txChar = await service.getCharacteristic(TX);
-    await txChar.startNotifications();
-    txChar.addEventListener("characteristicvaluechanged", async (event) => {
-      const q = new TextDecoder().decode(event.target.value).trim();
-      if (!q) return;
-      log("Вопрос: " + q);
-      try {
-        const ans = await askAI(q);
-        log("Ответ: " + ans, "ok");
-        await rxChar.writeValueWithoutResponse(new TextEncoder().encode(ans));
-      } catch (e) {
-        log(String(e), "err");
-      }
-    });
+    try {
+      const txChar = await service.getCharacteristic(TX);
+      await txChar.startNotifications();
+      txChar.addEventListener("characteristicvaluechanged", async (event) => {
+        const q = new TextDecoder().decode(event.target.value).trim();
+        if (!q) return;
+        if (q.indexOf("ESP got:") === 0) return;
+        log("Вопрос: " + q);
+        try {
+          const ans = await askAI(q);
+          log("Ответ: " + ans, "ok");
+          await sendToEsp(ans);
+        } catch (e) {
+          log(String(e), "err");
+        }
+      });
+    } catch (e) {
+      log("TX notify нет, пиши с телефона", "err");
+    }
     statusEl.textContent = "Подключено";
     log("BLE ок", "ok");
   } catch (e) {
     statusEl.textContent = "Не подключено";
+    log(String(e), "err");
+  }
+};
+document.getElementById("sendBtn").onclick = async () => {
+  const q = document.getElementById("q").value.trim();
+  if (!q) return;
+  try {
+    await sendToEsp(q);
+    const ans = await askAI(q);
+    log("Ответ: " + ans, "ok");
+    await sendToEsp(ans);
+  } catch (e) {
     log(String(e), "err");
   }
 };
