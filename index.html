@@ -20,7 +20,7 @@
   <input id="apiKey" type="password" placeholder="API ключ Groq" />
   <input id="apiUrl" value="https://api.groq.com/openai/v1/chat/completions" />
   <input id="model" value="llama-3.3-70b-versatile" />
-  <textarea id="system">Отвечай кратко по-русски, до 200 символов. Помни предыдущий вопрос пользователя.</textarea>
+  <textarea id="system">Отвечай кратко по-русски, до 160 символов, без markdown.</textarea>
   <button id="connectBtn">Подключить калькулятор</button>
   <button id="saveBtn" class="secondary">Сохранить настройки</button>
   <input id="q" placeholder="Вопрос с телефона" />
@@ -43,8 +43,9 @@ function log(text, cls = "") {
 }
 function clip(s) {
   s = (s || "").toString().trim();
-  return s.length > 180 ? s.slice(0, 180) : s;
+  return s.length > 160 ? s.slice(0, 160) : s;
 }
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 function pickText(data) {
   const msg = data.choices?.[0]?.message || {};
   let ans = msg.content;
@@ -70,7 +71,7 @@ async function sendMessages(messages, model, apiUrl, apiKey) {
       "Content-Type": "application/json",
       "Authorization": "Bearer " + apiKey
     },
-    body: JSON.stringify({ model, messages, max_tokens: 180 })
+    body: JSON.stringify({ model, messages, max_tokens: 160 })
   });
   const raw = await res.text();
   if (!res.ok) throw new Error("API " + res.status + " " + raw);
@@ -81,27 +82,17 @@ async function askAI(question) {
   const apiUrl = document.getElementById("apiUrl").value.trim();
   const model = document.getElementById("model").value.trim().replace(/\s+/g, "");
   const system = document.getElementById("system").value.trim();
-  document.getElementById("model").value = model;
   if (!apiKey) throw new Error("Нет API ключа");
   const q = clip(question);
-  const messages = [
-    { role: "system", content: system },
-    ...history,
-    { role: "user", content: q }
-  ];
+  const messages = [{ role: "system", content: system }, ...history, { role: "user", content: q }];
   let ans;
   try {
     ans = await sendMessages(messages, model, apiUrl, apiKey);
   } catch (e) {
     if (String(e).indexOf("413") >= 0 || String(e).indexOf("too_large") >= 0) {
       history = [];
-      ans = await sendMessages([
-        { role: "system", content: system },
-        { role: "user", content: q }
-      ], model, apiUrl, apiKey);
-    } else {
-      throw e;
-    }
+      ans = await sendMessages([{ role: "system", content: system }, { role: "user", content: q }], model, apiUrl, apiKey);
+    } else throw e;
   }
   history.push({ role: "user", content: q });
   history.push({ role: "assistant", content: ans });
@@ -111,44 +102,19 @@ async function askAI(question) {
 async function sendToEsp(text) {
   if (!rxChar) throw new Error("нет BLE");
   const bytes = new TextEncoder().encode(clip(text));
-  try {
-    await rxChar.writeValueWithoutResponse(bytes);
-  } catch (e) {
-    await rxChar.writeValue(bytes);
-  }
+  await sleep(250);
+  try { await rxChar.writeValueWithoutResponse(bytes); }
+  catch (e) { await rxChar.writeValue(bytes); }
 }
 document.getElementById("connectBtn").onclick = async () => {
   try {
     const device = await navigator.bluetooth.requestDevice({
-      filters: [
-        { name: "CalcAI" },
-        { name: "Calc-ESP32" },
-        { namePrefix: "Calc" }
-      ],
+      filters: [{ name: "CalcAI" }, { name: "Calc-ESP32" }, { namePrefix: "Calc" }],
       optionalServices: [SERVICE]
     });
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(SERVICE);
     rxChar = await service.getCharacteristic(RX);
-    try {
-      const txChar = await service.getCharacteristic(TX);
-      await txChar.startNotifications();
-      txChar.addEventListener("characteristicvaluechanged", async (event) => {
-        const q = new TextDecoder().decode(event.target.value).trim();
-        if (!q) return;
-        if (q.indexOf("ESP got:") === 0) return;
-        log("Вопрос: " + q);
-        try {
-          const ans = await askAI(q);
-          log("Ответ: " + ans, "ok");
-          await sendToEsp(ans);
-        } catch (e) {
-          log(String(e), "err");
-        }
-      });
-    } catch (e) {
-      log("TX notify нет, пиши с телефона", "err");
-    }
     statusEl.textContent = "Подключено";
     log("BLE ок", "ok");
   } catch (e) {
@@ -159,8 +125,8 @@ document.getElementById("connectBtn").onclick = async () => {
 document.getElementById("sendBtn").onclick = async () => {
   const q = document.getElementById("q").value.trim();
   if (!q) return;
+  log("Вопрос: " + q);
   try {
-    await sendToEsp(q);
     const ans = await askAI(q);
     log("Ответ: " + ans, "ok");
     await sendToEsp(ans);
