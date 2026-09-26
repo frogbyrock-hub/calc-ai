@@ -19,7 +19,7 @@
   <h2>Calc AI</h2>
   <input id="apiKey" type="password" placeholder="API ключ Groq" />
   <input id="apiUrl" value="https://api.groq.com/openai/v1/chat/completions" />
-  <input id="model" value="llama-3.3-70b-versatile" />
+  <input id="model" value="openai/gpt-oss-120b" />
   <textarea id="system">Отвечай кратко по-русски, до 160 символов, без markdown.</textarea>
   <button id="connectBtn">Подключить калькулятор</button>
   <button id="saveBtn" class="secondary">Сохранить настройки</button>
@@ -30,7 +30,6 @@
 <script>
 const SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
 const RX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
-const TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
 let rxChar = null;
 let history = [];
 const logEl = document.getElementById("log");
